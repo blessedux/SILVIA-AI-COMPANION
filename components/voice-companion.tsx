@@ -48,47 +48,13 @@ export default function VoiceCompanion({ isListening, isSpeaking }: VoiceCompani
         color = "#64748b" // Slate when idle
       }
 
-      // Draw the slightly uneven circle
+      // Draw the perfect circle
       ctx.save()
       ctx.translate(canvas.width / 2, canvas.height / 2)
       ctx.rotate(rotation)
 
       ctx.beginPath()
-
-      // Add subtle oval distortion based on rotation
-      const ovalFactor = 1 + Math.sin(rotation * 2) * 0.05 // Subtle oval effect
-
-      for (let i = 0; i < points; i++) {
-        const angle = (i / points) * Math.PI * 2
-        const nextAngle = (((i + 1) % points) / points) * Math.PI * 2
-
-        // Apply subtle variance to each point
-        const variance = Math.sin(Date.now() / 2000 + i * 0.5) * radiusVariance
-        const radius = radiusBase + variance
-
-        // Apply oval distortion
-        const xFactor = ovalFactor
-        const yFactor = 1 / ovalFactor
-
-        const x = Math.cos(angle) * radius * xFactor
-        const y = Math.sin(angle) * radius * yFactor
-
-        if (i === 0) {
-          ctx.moveTo(x, y)
-        } else {
-          // Use arcs instead of bezier curves for smoother, more circular shape
-          const prevAngle = ((i - 1) / points) * Math.PI * 2
-          const prevX = Math.cos(prevAngle) * (radiusBase + variance) * xFactor
-          const prevY = Math.sin(prevAngle) * (radiusBase + variance) * yFactor
-
-          // Use quadratic curves for subtle unevenness
-          const cpX = (x + prevX) / 2 + Math.sin(angle * 3) * (radiusVariance / 2)
-          const cpY = (y + prevY) / 2 + Math.cos(angle * 3) * (radiusVariance / 2)
-
-          ctx.quadraticCurveTo(cpX, cpY, x, y)
-        }
-      }
-
+      ctx.arc(0, 0, radiusBase, 0, Math.PI * 2)
       ctx.closePath()
 
       // Add a subtle gradient
@@ -125,7 +91,7 @@ export default function VoiceCompanion({ isListening, isSpeaking }: VoiceCompani
   return (
     <div className="relative w-[280px] h-[280px] flex items-center justify-center">
       <canvas ref={canvasRef} className="absolute inset-0" width={280} height={280} />
-      {isListening && <div className="z-10 text-white font-light">Listening...</div>}
+      {isListening && <div className="z-10 text-white font-light">Escuchando...</div>}
     </div>
   )
 }

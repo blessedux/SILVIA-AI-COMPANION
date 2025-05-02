@@ -30,7 +30,7 @@ export default function EmergencyButton() {
     return (
       <div className="w-full bg-red-50 rounded-xl p-4 border border-red-200 animate-pulse">
         <p className="text-center text-red-800 mb-4">
-          {calling ? "Calling emergency services..." : "Are you sure you want to call emergency services?"}
+          {calling ? "Llamando a servicios de emergencia..." : "¿Está seguro de que desea llamar a servicios de emergencia?"}
         </p>
         <div className="flex gap-2">
           <Button
@@ -40,7 +40,7 @@ export default function EmergencyButton() {
             className="flex-1 border-red-300 text-red-700"
           >
             <X className="mr-2 h-4 w-4" />
-            Cancel
+            Cancelar
           </Button>
           <Button
             onClick={confirmEmergency}
@@ -48,7 +48,7 @@ export default function EmergencyButton() {
             className="flex-1 bg-red-600 hover:bg-red-700 text-white"
           >
             <PhoneCall className="mr-2 h-4 w-4" />
-            Confirm
+            Confirmar
           </Button>
         </div>
       </div>
@@ -58,7 +58,7 @@ export default function EmergencyButton() {
   return (
     <Button onClick={handleEmergencyClick} variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
       <PhoneCall className="mr-2 h-4 w-4" />
-      Emergency Assistance
+      Asistencia de Emergencia
     </Button>
   )
 }
