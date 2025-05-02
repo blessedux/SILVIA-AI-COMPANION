@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import NotificationSound from "@/components/notification-sound"
 import { Mic, MicOff } from "lucide-react"
 import dynamic from 'next/dynamic'
+import { textToSpeech } from "@/utils/tts"
 
 // Declare types for speech recognition
 declare global {
@@ -30,6 +31,7 @@ export default function Home() {
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt')
   const [isClient, setIsClient] = useState(false)
   const synthRef = useRef<SpeechSynthesis | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // First effect to set client-side flag
   useEffect(() => {
@@ -42,52 +44,44 @@ export default function Home() {
     synthRef.current = window.speechSynthesis
   }, [isClient])
 
-  const speak = (text: string) => {
-    if (!synthRef.current) {
-      console.error('Speech synthesis not available')
-      return
-    }
+  const speak = async (text: string) => {
+    try {
+      // Generate audio URL using ElevenLabs
+      const audioUrl = await textToSpeech(text)
+      
+      // Create and play audio
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = audioUrl
+      } else {
+        audioRef.current = new Audio(audioUrl)
+      }
 
-    // Cancel any ongoing speech
-    synthRef.current.cancel()
+      audioRef.current.onplay = () => {
+        setIsSpeaking(true)
+      }
 
-    // Create utterance
-    const utterance = new SpeechSynthesisUtterance(text)
-    
-    // Set Spanish voice if available
-    const voices = synthRef.current.getVoices()
-    console.log('Available voices:', voices)
-    const spanishVoice = voices.find(voice => 
-      voice.lang.includes('es') || voice.lang.includes('es-ES')
-    )
-    if (spanishVoice) {
-      console.log('Using Spanish voice:', spanishVoice)
-      utterance.voice = spanishVoice
-    } else {
-      console.log('No Spanish voice found, using default')
-    }
+      audioRef.current.onended = () => {
+        setIsSpeaking(false)
+      }
 
-    // Configure voice settings
-    utterance.rate = 0.9 // Slightly slower for clarity
-    utterance.pitch = 1.0 // Normal pitch
-    utterance.volume = 1.0 // Full volume
+      audioRef.current.onerror = () => {
+        setIsSpeaking(false)
+        console.error('Error playing audio')
+      }
 
-    // Handle speech events
-    utterance.onstart = () => {
-      console.log('Speech synthesis started')
-      setIsSpeaking(true)
+      await audioRef.current.play()
+    } catch (error) {
+      console.error('Error in speak function:', error)
+      // Fallback to browser's speech synthesis if ElevenLabs fails
+      if (synthRef.current) {
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'es-ES'
+        utterance.onend = () => setIsSpeaking(false)
+        utterance.onerror = () => setIsSpeaking(false)
+        synthRef.current.speak(utterance)
+      }
     }
-    utterance.onend = () => {
-      console.log('Speech synthesis ended')
-      setIsSpeaking(false)
-    }
-    utterance.onerror = (event) => {
-      console.error('Speech synthesis error:', event)
-      setIsSpeaking(false)
-    }
-
-    // Speak
-    synthRef.current.speak(utterance)
   }
 
   const handleUserInput = async (userMessage: string) => {
@@ -109,7 +103,7 @@ export default function Home() {
       }
 
       // Speak the response
-      speak(data.response)
+      await speak(data.response)
     } catch (error) {
       console.error('Error processing user input:', error)
       setResponse("Lo siento, hubo un error al procesar tu solicitud.")

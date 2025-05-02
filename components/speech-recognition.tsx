@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Mic, MicOff } from "lucide-react"
 
+// Declare types for speech recognition
+declare global {
+  interface Window {
+    webkitSpeechRecognition: new () => SpeechRecognition
+    SpeechRecognition: new () => SpeechRecognition
+  }
+}
+
 interface SpeechRecognitionComponentProps {
   onTranscript: (text: string) => void
   onError: (error: string) => void
@@ -21,135 +29,40 @@ const SpeechRecognitionComponent = ({
   isListening,
   setIsListening
 }: SpeechRecognitionComponentProps) => {
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const isRecognitionActive = useRef(false)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt')
-  const [retryCount, setRetryCount] = useState(0)
-  const [isRetrying, setIsRetrying] = useState(false)
-  const maxRetries = 3
-  const initializationAttempted = useRef(false)
+  const [isButtonEnabled, setIsButtonEnabled] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [state, setState] = useState<'idle' | 'requesting_permission' | 'recording' | 'processing' | 'error'>('idle')
 
-  // Initialize speech recognition
+  // Update button state
   useEffect(() => {
-    if (isInitialized || initializationAttempted.current) return
-    initializationAttempted.current = true
-
-    const initializeSpeechRecognition = async () => {
-      try {
-        // Check if browser supports speech recognition
-        if (!('webkitSpeechRecognition' in window)) {
-          onError('Tu navegador no soporta reconocimiento de voz. Por favor, usa Chrome o Edge.')
-          console.error('Speech recognition not supported')
-          return
-        }
-
-        // Initialize speech recognition
-        const recognition = new window.webkitSpeechRecognition()
-        recognition.continuous = false
-        recognition.interimResults = false
-        recognition.lang = 'es-ES' // Set to Spanish
-        recognition.maxAlternatives = 1
-
-        // Configure recognition settings
-        recognition.onstart = () => {
-          console.log('Speech recognition started')
-          setIsListening(true)
-          isRecognitionActive.current = true
-          onError('')
-        }
-
-        recognition.onend = () => {
-          console.log('Speech recognition ended')
-          setIsListening(false)
-          isRecognitionActive.current = false
-        }
-
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-          console.log('Speech recognition result:', event)
-          const transcript = event.results[0][0].transcript
-          onTranscript(transcript)
-        }
-
-        recognition.onerror = (event: SpeechRecognitionError) => {
-          console.error('Speech recognition error:', {
-            error: event.error,
-            message: event.message,
-            type: event.type,
-            timeStamp: event.timeStamp
-          })
-
-          if (event.error === 'not-allowed') {
-            onError('Por favor, permite el acceso al micrófono para usar SILVIA.')
-            setPermissionStatus('denied')
-            onPermissionChange('denied')
-          } else if (event.error === 'network') {
-            if (retryCount < maxRetries) {
-              const backoffTime = Math.pow(2, retryCount) * 1000 // Exponential backoff
-              onError(`Error de conexión. Reintentando en ${backoffTime/1000} segundos...`)
-              setIsRetrying(true)
-              setRetryCount(prev => prev + 1)
-              
-              // Create a new recognition instance for retry
-              const newRecognition = new window.webkitSpeechRecognition()
-              newRecognition.continuous = false
-              newRecognition.interimResults = false
-              newRecognition.lang = 'es-ES'
-              newRecognition.maxAlternatives = 1
-              
-              // Copy event handlers
-              newRecognition.onstart = recognition.onstart
-              newRecognition.onend = recognition.onend
-              newRecognition.onresult = recognition.onresult
-              newRecognition.onerror = recognition.onerror
-
-              setTimeout(() => {
-                if (recognitionRef.current) {
-                  recognitionRef.current.stop()
-                }
-                recognitionRef.current = newRecognition
-                setIsRetrying(false)
-                handleVoiceInteraction()
-              }, backoffTime)
-            } else {
-              onError('Error de conexión persistente. Por favor, verifica tu conexión a internet e intenta nuevamente más tarde.')
-              setRetryCount(0)
-            }
-          } else {
-            onError(`Error de reconocimiento: ${event.error}`)
-          }
-          
-          setIsListening(false)
-          isRecognitionActive.current = false
-        }
-
-        // Store the recognition instance
-        recognitionRef.current = recognition
-        setIsInitialized(true)
-        console.log('Speech recognition initialized successfully')
-
-      } catch (err) {
-        console.error('Error initializing speech recognition:', err)
-        onError('Error al inicializar el reconocimiento de voz')
-        initializationAttempted.current = false
-      }
-    }
-
-    initializeSpeechRecognition()
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-        isRecognitionActive.current = false
-      }
-    }
-  }, [onTranscript, onError, onPermissionChange, setIsListening, isInitialized, retryCount])
+    const enabled = !isSpeaking && !isProcessing && permissionStatus !== 'denied'
+    setIsButtonEnabled(enabled)
+    
+    console.log('State update:', {
+      isButtonEnabled: enabled,
+      isSpeaking,
+      isProcessing,
+      permissionStatus
+    })
+  }, [isSpeaking, isProcessing, permissionStatus])
 
   const requestMicrophonePermission = async () => {
+    console.log('Requesting microphone permission')
     try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach(track => track.stop()) // Stop the stream immediately
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1
+        }
+      })
+      console.log('Microphone permission granted')
+      stream.getTracks().forEach(track => track.stop())
       setPermissionStatus('granted')
       onPermissionChange('granted')
       onError('')
@@ -163,63 +76,139 @@ const SpeechRecognitionComponent = ({
     }
   }
 
-  const handleVoiceInteraction = async () => {
-    if (isSpeaking || isRetrying) {
-      console.log('Cannot start listening while speaking or retrying')
-      return
+  const startRecording = async () => {
+    try {
+      setState('requesting_permission')
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1
+        }
+      })
+      console.log('Audio stream obtained')
+      setState('recording')
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 16000
+      })
+      
+      audioChunksRef.current = []
+      
+      mediaRecorder.ondataavailable = (event) => {
+        console.log('Audio data available:', event.data.size)
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+      
+      mediaRecorder.onstop = async () => {
+        console.log('MediaRecorder stopped')
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' })
+        console.log('Audio blob created:', {
+          size: audioBlob.size,
+          type: audioBlob.type
+        })
+        
+        const formData = new FormData()
+        formData.append('audio', audioBlob, 'recording.webm')
+        
+        try {
+          setState('processing')
+          console.log('Sending audio to server...')
+          const response = await fetch('/api/speech', {
+            method: 'POST',
+            body: formData,
+          })
+          
+          if (!response.ok) {
+            const errorText = await response.text()
+            console.error('Server error:', errorText)
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          
+          const result = await response.json()
+          console.log('Server response:', result)
+          
+          if (result.error) {
+            throw new Error(result.error)
+          }
+          
+          onTranscript(result.text)
+          setState('idle')
+        } catch (error) {
+          console.error('Error processing audio:', error)
+          setState('error')
+          onError('Error processing audio. Please try again.')
+        }
+      }
+      
+      mediaRecorder.start(100) // Collect data every 100ms
+      mediaRecorderRef.current = mediaRecorder
+      console.log('MediaRecorder started')
+    } catch (error) {
+      console.error('Error starting recording:', error)
+      setState('error')
     }
+  }
 
-    if (!recognitionRef.current) {
-      console.error('Speech recognition not initialized')
-      onError('El reconocimiento de voz no está inicializado')
+  const stopRecording = () => {
+    console.log('Stopping recording')
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+    }
+  }
+
+  const handleVoiceInteraction = async () => {
+    console.log('handleVoiceInteraction called:', {
+      isSpeaking,
+      isProcessing,
+      permissionStatus,
+      isListening
+    })
+
+    if (isSpeaking || isProcessing) {
+      console.log('Cannot start listening while speaking or processing')
       return
     }
 
     if (permissionStatus === 'denied') {
+      console.log('Microphone access denied')
       onError('El acceso al micrófono está bloqueado. Por favor, actualiza los permisos en la configuración de tu navegador.')
       return
     }
 
     if (permissionStatus === 'prompt') {
+      console.log('Requesting microphone permission')
       const granted = await requestMicrophonePermission()
       if (!granted) return
     }
 
-    if (!isRecognitionActive.current) {
-      console.log('Starting speech recognition')
-      try {
-        // Ensure any previous recognition is stopped
-        if (recognitionRef.current) {
-          recognitionRef.current.stop()
-        }
-        // Add a small delay before starting
-        setTimeout(() => {
-          if (recognitionRef.current) {
-            recognitionRef.current.start()
-          }
-        }, 1000) // Increased delay to 1 second
-      } catch (err) {
-        console.error('Error starting speech recognition:', err)
-        onError('Error al iniciar el reconocimiento de voz')
-      }
+    if (isListening) {
+      console.log('Stopping recording')
+      stopRecording()
+      setIsListening(false)
     } else {
-      console.log('Stopping speech recognition')
-      recognitionRef.current.stop()
+      console.log('Starting recording')
+      await startRecording()
+      setIsListening(true)
     }
   }
 
   return (
     <Button
       onClick={handleVoiceInteraction}
-      disabled={isSpeaking || !isInitialized}
+      disabled={!isButtonEnabled}
       className={`w-24 h-24 rounded-full transition-all duration-300 ${
         isListening 
           ? 'bg-red-500 hover:bg-red-600 scale-110' 
-          : !isInitialized
+          : !isButtonEnabled
             ? 'bg-gray-400 cursor-not-allowed'
-            : permissionStatus === 'denied'
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-500 hover:bg-blue-600'
+            : 'bg-blue-500 hover:bg-blue-600'
       }`}
     >
       {isListening ? (
